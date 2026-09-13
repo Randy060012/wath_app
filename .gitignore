@@ -1,0 +1,29 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.fleet
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/hot
+/public/storage
+# CLI standalone Tailwind (binaire 112 Mo, non versionné — voir build.sh)
+/build/tailwindcss.exe
+/build/tailwindcss
+# Note : build/tailwind.input.css EST versionné (source du CSS compilé)
+# et public/assets/css/app.css compilé EST versionné (déployable sans build).
+/storage/*.key
+/storage/pail
+/vendor
+Homestead.json
+Homestead.yaml
+Thumbs.db
