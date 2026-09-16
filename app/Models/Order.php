@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\OrderStatus;
 use App\Events\OrderMarkedReady;
+use App\Models\Concerns\BelongsToAgency;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,7 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class Order extends Model
 {
-    protected $fillable = [
+    use BelongsToAgency;    protected $fillable = [
         'ticket_no', 'client_id', 'user_id', 'status', 'total_amount',
         'discount_amount', 'is_express', 'promised_at', 'delivered_at', 'notes',
     ];

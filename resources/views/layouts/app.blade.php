@@ -30,6 +30,13 @@
         $nav[] = ['label' => 'Catalogue', 'icon' => 'tags', 'url' => route('admin.services.index'), 'active' => request()->routeIs('admin.services.*')];
         $nav[] = ['label' => 'Stock', 'icon' => 'package', 'url' => route('admin.inventory.index'), 'active' => request()->routeIs('admin.inventory.*')];
         $nav[] = ['label' => 'Rapports', 'icon' => 'trending-up', 'url' => route('admin.reports.index'), 'active' => request()->routeIs('admin.reports.*')];
+
+        // MULTI-TENANT — écrans GROUPE réservés au super-admin
+        // (users.agency_id null). Un admin local ne les voit pas.
+        if ($u->isSuperAdmin()) {
+            $nav[] = ['label' => 'Agences', 'icon' => 'building-2', 'url' => route('admin.agencies.index'), 'active' => request()->routeIs('admin.agencies.*')];
+            $nav[] = ['label' => 'Utilisateurs', 'icon' => 'user-cog', 'url' => route('admin.users.index'), 'active' => request()->routeIs('admin.users.*')];
+        }
     }
     // Action rapide : visible uniquement dans le drawer mobile
     if ($isCashier) {

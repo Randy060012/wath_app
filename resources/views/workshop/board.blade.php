@@ -64,7 +64,7 @@
                     <h2 class="font-semibold text-slate-900">{{ $col['label'] }}</h2>
                     <span class="badge {{ $col['badge'] }}" data-count="{{ $key }}">{{ $col['total'] }}</span>
                 </div>
-                <ul class="max-h-[520px] space-y-2 overflow-y-auto scroll-thin p-3" data-list="{{ $key }}">
+                <ul class="max-h-[520px] min-h-24 space-y-2 overflow-y-auto scroll-thin p-3" data-list="{{ $key }}">
                     @foreach ($col['items'] as $item)
                         <li data-card="{{ $item->barcode }}"
                             data-ticket="{{ $item->order->ticket_no }}"
@@ -72,7 +72,8 @@
                             data-service="{{ $item->service->name }}"
                             data-location="{{ $item->location ?? '' }}"
                             data-status="{{ $key }}"
-                            class="cursor-pointer rounded-lg bg-sky-50/60 p-2.5 text-sm ring-1 ring-sky-100 transition hover:bg-sky-100/80">
+                            draggable="true"
+                            class="cursor-grab rounded-lg bg-sky-50/60 p-2.5 text-sm ring-1 ring-sky-100 transition hover:bg-sky-100/80 active:cursor-grabbing">
                             <p class="font-mono text-xs text-slate-500">{{ $item->barcode }}</p>
                             <p class="font-medium">{{ $item->service->name }}</p>
                             <p class="flex flex-wrap items-center gap-1 text-xs text-slate-500">
@@ -201,6 +202,101 @@ function workshop() {
             setTimeout(() => card.classList.remove('flash-move'), 1200);
         },
     };
+}
+
+/* ==================================================================
+   DRAG & DROP KANBAN — déplacer une carte = changement de statut
+   ------------------------------------------------------------------
+   La drop est TOUJOURS validée par le serveur (machine à états
+   OrderStatus::allowedTransitions) : en cas de refus, la carte est
+   rendue à sa colonne d'origine et l'erreur est affichée.
+   ================================================================== */
+let dragState = null; // { barcode, fromStatus, card }
+
+document.addEventListener('dragstart', (e) => {
+    const card = e.target.closest('[data-card]');
+    if (!card) return;
+    dragState = {
+        barcode: card.dataset.card,
+        fromStatus: card.dataset.status,
+        card,
+    };
+    card.classList.add('is-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', card.dataset.card); // requis par Firefox
+});
+
+document.addEventListener('dragend', () => {
+    dragState?.card?.classList.remove('is-dragging');
+    document.querySelectorAll('.drop-target').forEach((el) => el.classList.remove('drop-target'));
+    dragState = null;
+});
+
+document.addEventListener('dragover', (e) => {
+    const list = e.target.closest('[data-list]');
+    if (!list || !dragState) return;
+    e.preventDefault();                    // autorise le drop
+    e.dataTransfer.dropEffect = 'move';
+    list.classList.add('drop-target');
+});
+
+document.addEventListener('dragleave', (e) => {
+    const list = e.target.closest('[data-list]');
+    if (list) list.classList.remove('drop-target');
+});
+
+document.addEventListener('drop', async (e) => {
+    const list = e.target.closest('[data-list]');
+    if (!list || !dragState) return;
+    e.preventDefault();
+
+    const targetStatus = list.dataset.list;
+    const { barcode, fromStatus, card } = dragState;
+
+    // Nettoyage visuel immédiat
+    list.classList.remove('drop-target');
+    card.classList.remove('is-dragging');
+    dragState = null;
+
+    if (targetStatus === fromStatus) return; // repositionnement sans changement
+
+    // Déplacement OPTIMISTE (l'UX atelier prime), confirmé par le serveur.
+    moveCard(barcode, targetStatus, null);
+
+    try {
+        const res = await fetch('{{ url('atelier/scan') }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ barcode, new_status: targetStatus }),
+        });
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) {
+            // REFUS (machine à états) : retour à la colonne d'origine
+            moveCard(barcode, fromStatus, null);
+            setFeedback(json.message ?? 'Transition non autorisée.', false);
+            return;
+        }
+
+        setFeedback(json.message, true);
+    } catch (err) {
+        moveCard(barcode, fromStatus, null);
+        setFeedback('Erreur réseau : ' + err.message, false);
+    }
+});
+
+// Petit utilitaire : affiche le retour de scan/drop dans la zone feedback
+function setFeedback(message, ok) {
+    const el = document.querySelector('[x-show="feedback"]');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.toggle('text-emerald-700', ok);
+    el.classList.toggle('text-rose-700', !ok);
+    el.style.display = 'flex';
 }
 
 // Clic sur une carte = pré-remplit le champ scan (gain de temps atelier)

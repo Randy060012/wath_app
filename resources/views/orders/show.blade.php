@@ -126,6 +126,38 @@
                 @endif
             </div>
 
+            {{-- PAIEMENT PARTIEL : régler une partie du solde SANS livrer --}}
+            @if ($order->status !== \App\Enums\OrderStatus::Livre && $order->balance_due > 0)
+                <div id="partial-payment" class="card p-4 ring-1 ring-amber-200">
+                    <h2 class="mb-1 font-semibold text-slate-900">Payer une partie du solde</h2>
+                    <p class="mb-3 text-xs text-slate-500">Encaissement sans livraison — plusieurs versements possibles.</p>
+                    <form method="POST" action="{{ route('orders.pay', $order) }}" class="space-y-3">
+                        @csrf
+                        <div>
+                            <label class="label">Montant versé</label>
+                            <input type="number" step="0.01" min="0.01" max="{{ $order->balance_due }}" name="amount"
+                                   value="{{ $order->balance_due }}" class="input text-right font-semibold" required>
+                        </div>
+                        <div>
+                            <label class="label">Moyen</label>
+                            <select name="method" class="input">
+                                <option value="cash">Espèces</option>
+                                <option value="mobile_money">Mobile Money</option>
+                                <option value="card">Carte</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="label">Référence (optionnel)</label>
+                            <input type="text" name="reference" class="input" placeholder="ID transaction…">
+                        </div>
+                        <button class="btn-primary w-full gap-2">
+                            <x-icon name="hand-coins" class="w-4 h-4" />
+                            Enregistrer le paiement
+                        </button>
+                    </form>
+                </div>
+            @endif
+
             {{-- Retrait : encaissement du solde + livraison --}}
             @if ($order->status !== \App\Enums\OrderStatus::Livre)
                 <div id="settle" class="card p-4">

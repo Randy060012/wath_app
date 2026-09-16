@@ -124,6 +124,56 @@ class OrderController extends Controller
     }
 
     /**
+     * PAIEMENT PARTIEL (acompte supplémentaire, SANS livraison) :
+     * encaisse une part du solde restant et laisse la commande ouverte.
+     * Utilisé quand le client règle « une partie maintenant, le reste
+     * au retrait » — plusieurs versements sont possibles.
+     *
+     * Le garde-fou serveur : jamais plus que le solde dû (anti-paiement
+     * négatif / excédentaire accidentel).
+     */
+    public function pay(Request $request, Order $order)
+    {
+        $data = $request->validate([
+            'amount'    => ['required', 'numeric', 'min:0.01'],
+            'method'    => ['required', 'in:cash,mobile_money,card'],
+            'reference' => ['nullable', 'string', 'max:60'],
+        ], [
+            'amount.required' => 'Le montant est obligatoire.',
+            'amount.min'      => 'Le montant doit être supérieur à zéro.',
+            'method.required' => 'Le moyen de paiement est obligatoire.',
+        ]);
+
+        $balanceDue = $order->balance_due;
+
+        if ($balanceDue <= 0) {
+            return back()->with('error', 'Cette commande est déjà intégralement réglée.');
+        }
+
+        $amount = min((float) $data['amount'], $balanceDue); // jamais plus que le dû
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $order, $amount, $data) {
+            $this->orders->addPayment(
+                $order,
+                $amount,
+                PaymentMethod::from($data['method']),
+                $request->user()->id,
+                $data['reference'] ?? null,
+            );
+        });
+
+        $remaining = $order->refresh()->balance_due;
+
+        return back()->with(
+            'success',
+            $remaining > 0
+                ? 'Paiement de ' . number_format($amount, 0, ',', ' ') . ' ' . config('pressing.currency', 'FCFA')
+                    . ' enregistré. Reste dû : ' . number_format($remaining, 0, ',', ' ') . '.'
+                : 'Commande ' . $order->ticket_no . ' intégralement réglée.'
+        );
+    }
+
+    /**
      * RETRAIT : encaisse le solde restant et marque la commande LIVRÉE
      * (tous les articles passent à "Livré" → l'Observer synchronise).
      */

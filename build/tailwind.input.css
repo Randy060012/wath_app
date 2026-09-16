@@ -354,6 +354,19 @@ textarea.input { min-height: 4.5rem; resize: vertical; }
     100% { box-shadow: 0 0 0 0 rgb(3 105 161 / 0); }
 }
 
+/* --- Drag & drop des cartes (déplacement = changement de statut) --- */
+.is-dragging {
+    opacity: .45;
+    cursor: grabbing !important;
+    box-shadow: 0 0 0 2px rgb(3 105 161 / .45);
+}
+.drop-target {
+    background: #e0f2fe;
+    outline: 2px dashed #0284c7;
+    outline-offset: -4px;
+    border-radius: .5rem;
+}
+
 /* =============================================================================
    RETARDS — lignes des dépôts dont la date promise est dépassée
    ========================================================================== */

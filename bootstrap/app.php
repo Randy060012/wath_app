@@ -16,10 +16,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // ->middleware('role:caissier') etc.
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'super-admin' => \App\Http\Middleware\EnsureSuperAdmin::class,
         ]);
 
         // Redirection des visiteurs non authentifiés vers la page de login
         $middleware->redirectGuestsTo('/login');
+
+        // MULTI-TENANT : verrouille le contexte d'agence (session) sur
+        // tout le groupe web authentifié + partage $currentAgency aux vues.
+        $middleware->web(append: [
+            \App\Http\Middleware\EnsureAgencyContext::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

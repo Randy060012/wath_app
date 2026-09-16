@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\AgencyController;
 use App\Http\Controllers\CashRegisterController;
 use App\Http\Controllers\ClientController;
+use App\Http\Controllers\AgencyContextController;
 use App\Http\Controllers\ClientSearchController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
@@ -9,6 +11,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProformaController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\UserAdminController;
 use App\Http\Controllers\WorkshopController;
 use Illuminate\Support\Facades\Route;
 
@@ -58,6 +61,8 @@ Route::middleware(['auth', 'role:caissier|admin'])->group(function () {
     Route::resource('orders', OrderController::class)->except(['destroy', 'edit']);
     // settle = retrait avec encaissement du solde
     Route::post('/orders/{order}/settle', [OrderController::class, 'settle'])->name('orders.settle');
+    // pay = PAIEMENT PARTIEL (acompte supplémentaire, sans livraison)
+    Route::post('/orders/{order}/pay', [OrderController::class, 'pay'])->name('orders.pay');
     // mark-ready = action express depuis la liste des dépôts (menu contextuel)
     Route::post('/orders/{order}/mark-ready', [OrderController::class, 'markReady'])->name('orders.markReady');
 
@@ -99,4 +104,33 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::delete('/inventory/{inventory}', [InventoryController::class, 'destroy'])->name('inventory.destroy');
     // Rapports
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+    // Export PDF du rapport (mêmes filtres ?preset/from/to/agency)
+    Route::get('/reports/pdf', [ReportController::class, 'pdf'])->name('reports.pdf');
+
+    // -----------------------------------------------------------------
+    // MULTI-TENANT — ADMINISTRATION GROUPE (super-admin uniquement)
+    // -----------------------------------------------------------------
+    Route::middleware('super-admin')->group(function () {
+        // Agences / businesses
+        Route::get('/agencies', [AgencyController::class, 'index'])->name('agencies.index');
+        Route::post('/agencies', [AgencyController::class, 'store'])->name('agencies.store');
+        Route::post('/agencies/{agency}/toggle', [AgencyController::class, 'toggle'])->name('agencies.toggle');
+        Route::post('/agencies/{agency}/seed-catalog', [AgencyController::class, 'seedCatalog'])->name('agencies.seedCatalog');
+
+        // Utilisateurs (rôle + agence)
+        Route::get('/users', [UserAdminController::class, 'index'])->name('users.index');
+        Route::post('/users', [UserAdminController::class, 'store'])->name('users.store');
+        Route::patch('/users/{user}', [UserAdminController::class, 'update'])->name('users.update');
+        Route::post('/users/{user}/toggle', [UserAdminController::class, 'toggle'])->name('users.toggle');
+        Route::post('/users/{user}/reset-password', [UserAdminController::class, 'resetPassword'])->name('users.resetPassword');
+
+        // Sélecteur de contexte du super-admin (vue groupe ⇄ agence)
+        Route::post('/agency-context', [AgencyContextController::class, 'switch'])->name('agency.switch');
+        // Alias court utilisé par les vues admin
+        Route::post('/agency-context-switch', [AgencyContextController::class, 'switch'])->name('agency-context.switch');
+    });
+
+    // Sélecteur de contexte accessible à tout admin (retour vers sa vue)
+    Route::post('/agency-context/reset', [AgencyContextController::class, 'reset'])
+        ->middleware('role:admin')->name('agency.reset');
 });

@@ -19,8 +19,8 @@ return new class extends Migration
     {
         Schema::create('categories', function (Blueprint $table) {
             $table->id();                                    // PK
-            $table->string('name')->unique();                // "Lavage", "Nettoyage à sec"...
-            $table->string('slug')->unique();                // pour les URL propres
+            $table->string('name');                          // "Lavage", "Nettoyage à sec"...
+            $table->string('slug');                          // pour les URL propres
             $table->string('icon')->nullable();              // emoji/classe d'icône pour la grille caisse
             $table->unsignedSmallInteger('sort_order')->default(0); // tri de l'affichage
             $table->boolean('is_active')->default(true);

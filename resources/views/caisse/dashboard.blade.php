@@ -186,13 +186,42 @@
                             </td>
                             <td class="text-right">
                                 @if ($order->balance_due > 0)
-                                    <span class="text-xs font-semibold text-rose-600">solde {{ number_format($order->balance_due, 0, ',', ' ') }}</span>
+                                    {{-- PAIEMENT PARTIEL : « Payer le reste » inline --}}
+                                    <button type="button"
+                                            x-data @click="$dispatch('open-pay-{{ $order->id }}')"
+                                            class="text-xs font-semibold text-rose-600 hover:underline">
+                                        solde {{ number_format($order->balance_due, 0, ',', ' ') }}
+                                    </button>
                                 @else
                                     <span class="text-xs font-semibold text-emerald-600">réglé</span>
                                 @endif
                                 <span class="block text-xs text-slate-400">{{ number_format($order->net_amount, 0, ',', ' ') }} {{ $currency }}</span>
                             </td>
                         </tr>
+                        @if ($order->balance_due > 0 && $order->status !== \App\Enums\OrderStatus::Livre)
+                            <tr x-data="{ open: false }"
+                                @open-pay-{{ $order->id }}.window="open = true"
+                                x-show="open" x-cloak>
+                                <td colspan="3" class="bg-amber-50">
+                                    <form method="POST" action="{{ route('orders.pay', $order) }}"
+                                          class="flex flex-wrap items-center gap-2 py-1">
+                                        @csrf
+                                        <span class="text-xs font-semibold text-slate-600">Payer le reste — {{ $order->ticket_no }} :</span>
+                                        <input type="number" step="0.01" min="0.01" max="{{ $order->balance_due }}" name="amount"
+                                               value="{{ $order->balance_due }}" class="input input-sm !w-28 text-right" required>
+                                        <select name="method" class="input input-sm !w-36">
+                                            <option value="cash">Espèces</option>
+                                            <option value="mobile_money">Mobile Money</option>
+                                            <option value="card">Carte</option>
+                                        </select>
+                                        <button class="btn-primary btn-sm gap-1">
+                                            <x-icon name="hand-coins" class="w-3.5 h-3.5" />
+                                            Encaisser
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        @endif
                     @empty
                         <tr><td colspan="3" class="px-4 py-8 text-center text-slate-400">Aucun dépôt aujourd'hui.</td></tr>
                     @endforelse
@@ -203,6 +232,55 @@
 
     {{-- ================= COLONNE DROITE : JOURNAL ================= --}}
     <div class="space-y-6">
+        {{-- SOLDES À RECOUVRER : dossiers ouverts (toutes dates) avec reste
+             à payer — le suivi des paiements partiels s'étend au-delà du
+             jour même pour ne jamais perdre un solde de vue. --}}
+        <div class="card overflow-hidden">
+            <h2 class="flex items-center gap-2 border-b border-slate-100 px-4 py-3 font-semibold text-slate-900">
+                <x-icon name="hand-coins" class="w-4 h-4 text-amber-600" />
+                Soldes à recouvrer
+                <span class="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                    {{ number_format($outstandingAll, 0, ',', ' ') }} {{ $currency }}
+                </span>
+            </h2>
+            <ul class="max-h-72 divide-y divide-slate-100 overflow-y-auto scroll-thin">
+                @forelse ($withBalance as $order)
+                    <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                        <div class="min-w-0">
+                            <a class="font-mono text-xs font-semibold text-sky-700 hover:underline" href="{{ route('orders.show', $order) }}">{{ $order->ticket_no }}</a>
+                            <span class="ml-2 text-sm">{{ $order->client->name }}</span>
+                            <span class="block text-xs text-slate-400">
+                                déposé le {{ $order->created_at->format('d/m') }}
+                                @if ($order->paid_amount > 0) · déjà réglé {{ number_format($order->paid_amount, 0, ',', ' ') }} @endif
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-rose-600">{{ number_format($order->balance_due, 0, ',', ' ') }}</span>
+                            <form method="POST" action="{{ route('orders.pay', $order) }}"
+                                  class="flex items-center gap-1"
+                                  x-data="{ open: false }">
+                                @csrf
+                                <input x-show="open" x-cloak type="number" step="0.01" min="0.01" max="{{ $order->balance_due }}"
+                                       name="amount" value="{{ $order->balance_due }}" class="input input-sm !w-24 text-right" required>
+                                <select x-show="open" x-cloak name="method" class="input input-sm !w-32">
+                                    <option value="cash">Espèces</option>
+                                    <option value="mobile_money">Mobile Money</option>
+                                    <option value="card">Carte</option>
+                                </select>
+                                <button type="button" x-show="!open" @click="open = true" class="btn-ghost btn-sm">payer</button>
+                                <button x-show="open" x-cloak class="btn-primary btn-sm">ok</button>
+                            </form>
+                        </div>
+                    </li>
+                @empty
+                    <li class="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                        <x-icon name="check-circle-2" class="w-8 h-8 text-slate-300" />
+                        <p class="text-sm text-slate-400">Aucun solde en attente — tout est réglé.</p>
+                    </li>
+                @endforelse
+            </ul>
+        </div>
+
         {{-- Répartition par moyen de paiement --}}
         <div class="card p-4">
             <h2 class="mb-3 flex items-center gap-2 font-semibold text-slate-900">

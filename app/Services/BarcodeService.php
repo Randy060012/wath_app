@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use chillerlan\QRCode\Common\EccLevel;
+use chillerlan\QRCode\Output\QRMarkupSVG;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Illuminate\Support\Facades\DB;
@@ -82,13 +84,19 @@ class BarcodeService
         return $generator->getBarcode($barcode, BarcodeGeneratorSVG::TYPE_CODE_128, $widthFactor, $height);
     }
 
-    /** QR code en data-URI (img src direct), contenu = code de l'article. */
+    /**
+     * QR code en data-URI (img src direct), contenu = code de l'article.
+     * Sortie SVG vectorielle (netteté parfaite à l'impression, aucune
+     * dépendance GD) encapsulée en base64 par la librairie elle-même
+     * (outputBase64 = true, défaut) → data-URI « image/svg+xml ».
+     */
     public function qrCodeDataUri(string $barcode): string
     {
         $options = new QROptions([
-            'outputType' => QRCode::OUTPUT_IMAGE_PNG,
-            'eccLevel'   => QRCode::ECC_L,
-            'scale'      => 4,
+            'outputInterface' => QRMarkupSVG::class,
+            'outputBase64'    => true,
+            'eccLevel'        => EccLevel::L,
+            'scale'           => 4,
         ]);
 
         return (new QRCode($options))->render($barcode);

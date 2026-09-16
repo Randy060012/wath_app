@@ -36,9 +36,20 @@
     <button class="btn-print" onclick="window.print()">Imprimer le ticket</button>
 
     <div class="ticket">
-        <p class="center"><strong>{{ config('app.name', 'Pressing Pro') }}</strong></p>
-        <p class="center small">{{ config('app.address', 'Pressing — quartier du marché') }}</p>
-        <p class="center small">Tél : {{ config('app.phone', '00 000 00 00 00') }}</p>
+        {{-- MULTI-TENANT : en-tête portant l'agence émettrice du ticket --}}
+        @if ($agency)
+            <p class="center"><strong>{{ $agency->name }}</strong></p>
+            @if ($agency->address)
+                <p class="center small">{{ $agency->address }}</p>
+            @endif
+            @if ($agency->phone)
+                <p class="center small">Tél : {{ $agency->phone }}</p>
+            @endif
+        @else
+            <p class="center"><strong>{{ config('app.name', 'Pressing Pro') }}</strong></p>
+            <p class="center small">{{ config('app.address', 'Pressing — quartier du marché') }}</p>
+            <p class="center small">Tél : {{ config('app.phone', '00 000 00 00 00') }}</p>
+        @endif
         <div class="hr"></div>
         <p class="center"><strong>TICKET DÉPÔT</strong></p>
         <div class="row"><span>Ticket :</span><strong>{{ $order->ticket_no }}</strong></div>

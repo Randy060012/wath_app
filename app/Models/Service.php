@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToAgency;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,8 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class Service extends Model
 {
-    protected $fillable = [
-        'category_id', 'name', 'price', 'pricing_unit',
+    use BelongsToAgency;    protected $fillable = [
+        'agency_id', 'category_id', 'name', 'price', 'pricing_unit',
         'default_hours', 'description', 'is_active',
     ];
 

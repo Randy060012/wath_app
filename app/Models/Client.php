@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ClientType;
+use App\Models\Concerns\BelongsToAgency;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Notifications\Notifiable;
@@ -21,7 +22,7 @@ use Illuminate\Notifications\Notifiable;
  */
 class Client extends Model
 {
-    use Notifiable;
+    use Notifiable, BelongsToAgency;
 
     protected $fillable = [
         'code', 'name', 'phone', 'email', 'address', 'notes', 'loyalty_points', 'type',

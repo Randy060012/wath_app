@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\OrderStatus;
+use App\Models\Concerns\BelongsToAgency;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class OrderItem extends Model
 {
-    protected $fillable = [
+    use BelongsToAgency;    protected $fillable = [
         'order_id', 'service_id', 'barcode', 'description', 'status',
         'unit_price', 'quantity', 'line_total', 'location',
     ];

@@ -15,8 +15,8 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RoleSeeder::class,
-            UserSeeder::class,
-            CatalogSeeder::class,
+            AgencySeeder::class,   // catalogue global + agence de démo
+            UserSeeder::class,     // super-admin + équipe multi-agences
         ]);
     }
 }

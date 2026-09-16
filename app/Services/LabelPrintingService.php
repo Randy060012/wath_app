@@ -28,7 +28,9 @@ class LabelPrintingService
      */
     public function ticketHtml(Order $order): string
     {
-        $order->load(['client', 'items.service', 'payments.user', 'cashier']);
+        // MULTI-TENANT : l'en-tête du ticket porte l'AGENCE ÉMETTRICE
+        // (nom, adresse, téléphone) — chaque business imprime son identité.
+        $order->load(['client', 'items.service', 'payments.user', 'cashier', 'agency']);
 
         $itemsHtml = $order->items
             ->map(fn ($it) => sprintf(
@@ -53,6 +55,7 @@ class LabelPrintingService
 
         return view('prints.ticket', [
             'order'        => $order,
+            'agency'       => $order->agency,
             'itemsHtml'    => $itemsHtml,
             'paymentsHtml' => $paymentsHtml,
             'barcodeSvg'   => $this->barcodes->barcodeSvg($order->ticket_no, 2, 46),
@@ -66,7 +69,9 @@ class LabelPrintingService
      */
     public function labelsHtml(Order $order): string
     {
-        $order->load(['client', 'items.service']);
+        // MULTI-TENANT : chaque étiquette porte le nom de l'AGENCE
+        // (une planche imprimée doit identifier le business émetteur).
+        $order->load(['client', 'items.service', 'agency']);
 
         $labels = $order->items->map(function ($item) {
             return [
@@ -78,6 +83,7 @@ class LabelPrintingService
 
         return view('prints.labels', [
             'order'  => $order,
+            'agency' => $order->agency,
             'labels' => $labels,
         ])->render();
     }

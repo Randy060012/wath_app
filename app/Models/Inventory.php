@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToAgency;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Inventory extends Model
 {
+    use BelongsToAgency;
     protected $fillable = ['name', 'unit', 'quantity', 'min_quantity', 'unit_cost', 'notes'];
 
     protected function casts(): array

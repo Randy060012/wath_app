@@ -11,13 +11,22 @@
             <x-icon name="trending-up" class="w-6 h-6 text-sky-700" />
             Rapports
         </h1>
-        <button type="button" onclick="window.print()" class="btn-ghost gap-2 no-print">
-            <x-icon name="printer" class="w-4 h-4" />
-            Imprimer
-        </button>
+        <div class="flex flex-wrap gap-2 no-print">
+            {{-- EXPORT PDF : mêmes filtres que l'écran (période + agence) --}}
+            <a href="{{ route('admin.reports.pdf', request()->only(['preset', 'from', 'to', 'agency'])) }}"
+               class="btn-primary gap-2"
+               title="Télécharger le rapport en PDF">
+                <x-icon name="file-down" class="w-4 h-4" />
+                Export PDF
+            </a>
+            <button type="button" onclick="window.print()" class="btn-ghost gap-2">
+                <x-icon name="printer" class="w-4 h-4" />
+                Imprimer
+            </button>
+        </div>
     </div>
 
-    {{-- Sélecteur de plage (GET) — presets ou dates explicites --}}
+    {{-- Sélecteur de plage (GET) — presets, dates explicites et AGENCIE (super-admin) --}}
     <form method="GET" class="card no-print mb-6 flex flex-wrap items-end gap-3 p-4">
         <div>
             <label class="label" for="preset">Période</label>
@@ -38,6 +47,20 @@
             <label class="label" for="to">Au</label>
             <input type="date" name="to" id="to" value="{{ $to->format('Y-m-d') }}" class="input !w-40">
         </div>
+        {{-- MULTI-TENANT : filtre par agence (super-admin uniquement) --}}
+        @if ($filterAgency['choices'] && $agencies->isNotEmpty())
+            <div>
+                <label class="label" for="agency">Agence</label>
+                <select name="agency" id="agency" class="input !w-52">
+                    <option value="all" @selected(!request()->filled('agency') || request('agency') === 'all')>Toutes les agences</option>
+                    @foreach ($agencies as $agency)
+                        <option value="{{ $agency->id }}" @selected(request('agency') == $agency->id)>
+                            {{ $agency->name }} ({{ $agency->code }})
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
         <button class="btn-primary gap-2">
             <x-icon name="refresh-cw" class="w-4 h-4" />
             Appliquer
@@ -147,7 +170,7 @@
         {{-- Graphique CA : barres SVG générées en Blade --}}
         <div class="card p-4 lg:col-span-2">
             <h2 class="mb-4 font-semibold text-slate-900">
-                Chiffre d'affaires — {{ $from->format('d/m') }} au {{ $to->format('d/m/Y') }} ({{ $currency }})
+                Chiffre d'affaires — {{ $filterAgency['label'] }} · {{ $from->format('d/m') }} au {{ $to->format('d/m/Y') }} ({{ $currency }})
             </h2>
             @php
                 $max = max($revenue->max('total') ?? 1, 1);
@@ -181,7 +204,8 @@
                     @php $total = $byMethod->sum('total'); $pct = $total > 0 ? round($m->total / $total * 100) : 0; @endphp
                     <li>
                         <div class="mb-1 flex justify-between text-sm">
-                            <span class="font-medium capitalize">{{ str_replace('_', ' ', $m->method) }}</span>
+                            {{-- $m->method est un ENUM (cast Payment) : on utilise son libellé --}}
+                            <span class="font-medium">{{ is_object($m->method) ? $m->method->label() : \App\Enums\PaymentMethod::from($m->method)->label() }}</span>
                             <span class="text-slate-500">{{ number_format($m->total, 0, ',', ' ') }} · {{ $pct }} %</span>
                         </div>
                         <div class="h-2 overflow-hidden rounded-full bg-slate-100">
@@ -221,4 +245,58 @@
             </tbody>
         </table>
     </div>
+
+    {{-- ============================================================
+         MULTI-TENANT — COMPARATIF PAR AGENCE (super-admin, vue groupe)
+         Une ligne par agence : CA, dépôts, clients, panier moyen,
+         prestation n°1. Permet de comparer les businesses d'un coup d'œil.
+         ============================================================ --}}
+    @if ($agencyComparison->isNotEmpty())
+        <div class="card mt-6 overflow-hidden">
+            <h2 class="flex items-center gap-2 border-b border-slate-100 px-4 py-3 font-semibold text-slate-900">
+                <x-icon name="building-2" class="w-4 h-4 text-sky-700" />
+                Comparatif par agence
+                <span class="text-sm font-normal text-slate-400">
+                    · {{ $from->format('d/m') }} au {{ $to->format('d/m/Y') }}
+                </span>
+            </h2>
+            <table class="table-simple">
+                <thead>
+                    <tr>
+                        <th>Agence</th>
+                        <th class="!text-right">CA encaissé</th>
+                        <th class="!text-right">Dépôts</th>
+                        <th class="!text-right">Nouveaux clients</th>
+                        <th class="!text-right">Panier moyen</th>
+                        <th>Prestation n°1</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @php $maxRevenue = max($agencyComparison->max('revenue'), 1); @endphp
+                    @forelse ($agencyComparison as $row)
+                        <tr>
+                            <td>
+                                <span class="font-semibold">{{ $row->name }}</span>
+                                <span class="block font-mono text-xs text-slate-400">{{ $row->code }}</span>
+                            </td>
+                            <td class="text-right">
+                                <span class="font-semibold">{{ number_format($row->revenue, 0, ',', ' ') }}</span>
+                                {{-- Barre proportionnelle : comparaison visuelle immédiate --}}
+                                <span class="mt-1 block h-1.5 w-28 overflow-hidden rounded-full bg-slate-100 ml-auto">
+                                    <span class="block h-full rounded-full bg-sky-600"
+                                          style="width: {{ round(100 * $row->revenue / $maxRevenue) }}%"></span>
+                                </span>
+                            </td>
+                            <td class="text-right">{{ $row->orders }}</td>
+                            <td class="text-right">{{ $row->clients }}</td>
+                            <td class="text-right">{{ number_format($row->avg_ticket, 0, ',', ' ') }}</td>
+                            <td class="text-sm text-slate-500">{{ $row->top_service ?? '—' }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">Aucune agence.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    @endif
 @endsection

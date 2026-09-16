@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ProformaStatus;
+use App\Models\Concerns\BelongsToAgency;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class Proforma extends Model
 {
-    protected $fillable = [
+    use BelongsToAgency;    protected $fillable = [
         'number', 'client_id', 'user_id', 'status', 'total_amount',
         'discount_amount', 'issued_at', 'valid_until', 'converted_order_id', 'notes',
     ];

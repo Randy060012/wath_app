@@ -38,7 +38,8 @@
         @foreach ($labels as $label)
             <div class="label-card">
                 <div class="head">
-                    <span>{{ config('app.name', 'Pressing Pro') }}</span>
+                    {{-- MULTI-TENANT : l'agence émettrice identifie l'étiquette --}}
+                    <span>{{ $agency?->name ?? config('app.name', 'Pressing Pro') }}</span>
                     <span>{{ $order->ticket_no }}</span>
                 </div>
                 <p class="client">{{ \Illuminate\Support\Str::limit($order->client->name, 22) }}</p>

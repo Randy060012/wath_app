@@ -60,6 +60,19 @@ class CashRegisterController extends Controller
         // À ENCAISSER encore aujourd'hui : somme des soldes des dossiers prêts
         $outstanding = (float) $readyToCollect->sum('balance_due');
 
+        // ------------------------------------------------------------------
+        // SOLDES À RECOUVRER : dossiers OUVERTS (toutes dates) avec reste à
+        // payer — paiements partiels à compléter, même après plusieurs jours.
+        // ------------------------------------------------------------------
+        $withBalance = Order::query()->open()
+            ->with('client')
+            ->orderBy('created_at')
+            ->get()
+            ->filter(fn ($o) => $o->balance_due > 0)
+            ->values();
+
+        $outstandingAll = (float) $withBalance->sum('balance_due');
+
         return view('caisse.dashboard', [
             'todayOrders'    => $todayOrders,
             'readyToCollect' => $readyToCollect,
@@ -67,6 +80,8 @@ class CashRegisterController extends Controller
             'paymentsToday'  => $paymentsToday,
             'byMethod'       => $byMethod,
             'outstanding'    => $outstanding,
+            'withBalance'    => $withBalance,
+            'outstandingAll' => $outstandingAll,
             'cashToday'      => (float) $paymentsToday->sum('amount'),
             'currency'       => config('pressing.currency', 'FCFA'),
         ]);
