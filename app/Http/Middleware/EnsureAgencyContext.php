@@ -14,8 +14,12 @@ use Symfony\Component\HttpFoundation\Response;
  * Appliqué au groupe 'auth' : garantit qu'une session authentifiée
  * porte toujours un contexte d'agence cohérent.
  *
- *  - utilisateur d'agence : le contexte est FORCÉ à son agence
- *    (impossible de voir autre chose, même en manipulant la session) ;
+ *  - utilisateur d'agence SANS groupe : le contexte est FORCÉ à son
+ *    agence (impossible de voir autre chose, même en manipulant la
+ *    session) ;
+ *  - PROPRIÉTAIRE self-service : respecte son sélecteur de session
+ *    (AgencyContext valide l'appartenance — sinon son agence de
+ *    rattachement fait foi) ;
  *  - super-admin : respecte son sélecteur (vue groupe ou une agence).
  *
  * Partage aussi l'agence courante à toutes les vues (badge sidebar).
@@ -31,11 +35,13 @@ class EnsureAgencyContext
         $user = $request->user();
 
         if ($user !== null) {
-            if ($user->agency_id !== null) {
-                // Employé d'agence : contexte verrouillé sur son agence.
+            if ($user->agency_id !== null && ! $user->managesGroup()) {
+                // Employé d'agence simple : contexte verrouillé sur son agence.
                 AgencyContext::set((int) $user->agency_id);
             }
-            // Super-admin : son sélecteur de session fait foi (peut être null = groupe).
+            // Propriétaire self-service : sélecteur validé par AgencyContext::id()
+            // (une agence non possédée est ignorée — fallback agence de rattachement).
+            // Super-admin : son sélecteur fait foi (peut être null = groupe).
         }
 
         view()->share('currentAgency', AgencyContext::agency());

@@ -330,6 +330,237 @@ class MultiTenantAndPaymentTest extends TestCase
             ->assertForbidden();
     }
 
+    /* =================================================================
+     | INSCRIPTION SELF-SERVICE (compte + première agence)
+     | ================================================================= */
+
+    public function test_self_registration_creates_owner_and_agency(): void
+    {
+        // Le catalogue global existe (setUp) ; aucune agence au départ
+        $agenciesBefore = Agency::count();
+
+        $this->get(route('register.show')); // amorce la session (CSRF)
+
+        $response = $this->post(route('register.store'), [
+            'name'                  => 'Nouveau Propriétaire',
+            'email'                 => 'nouveau@test.local',
+            'password'              => 'secret12',
+            'password_confirmation' => 'secret12',
+            'agency_name'           => 'Pressing du Progrès',
+            'agency_phone'          => '+221 77 000 00 00',
+            'terms'                 => '1',
+            '_token'                => csrf_token(),
+        ]);
+
+        $response->assertRedirect(route('dashboard'));
+
+        // L'agence existe, avec le catalogue copié
+        $agency = Agency::query()->where('name', 'Pressing du Progrès')->first();
+        $this->assertNotNull($agency);
+        $this->assertEquals($agenciesBefore + 1, Agency::count());
+        $this->assertGreaterThan(0, $agency->services()->count());
+
+        // Le compte : admin LOCAL rattaché à SON agence (jamais super-admin)
+        $user = User::query()->where('email', 'nouveau@test.local')->first();
+        $this->assertNotNull($user);
+        $this->assertEquals($agency->id, $user->agency_id);
+        $this->assertTrue($user->hasRole('admin'));
+        $this->assertFalse($user->isSuperAdmin());
+
+        // L'utilisateur est CONNECTÉ après l'inscription
+        $this->assertTrue(auth()->check());
+    }
+
+    public function test_registration_rejects_duplicate_email_and_agency_name(): void
+    {
+        // Doublon d'e-mail utilisateur
+        $this->get(route('register.show')); // amorce la session (CSRF)
+        $response = $this->from(route('register.show'))->post(route('register.store'), [
+            'name'                  => 'X',
+            'email'                 => 'caisse.a@test.local', // déjà pris (setUp)
+            'password'              => 'secret12',
+            'password_confirmation' => 'secret12',
+            'agency_name'           => 'Agence Totalement Nouvelle',
+            'terms'                 => '1',
+            '_token'                => csrf_token(),
+        ]);
+        $response->assertRedirect(route('register.show'));
+        $response->assertSessionHasErrors('email');
+
+        // Doublon de nom d'agence
+        $response = $this->from(route('register.show'))->post(route('register.store'), [
+            'name'                  => 'X',
+            'email'                 => 'autre@test.local',
+            'password'              => 'secret12',
+            'password_confirmation' => 'secret12',
+            'agency_name'           => 'Agence A', // existe déjà (setUp)
+            'terms'                 => '1',
+            '_token'                => csrf_token(),
+        ]);
+        $response->assertSessionHasErrors('agency_name');
+
+        // Rien n'a été créé (atomicité)
+        $this->assertEquals(0, User::query()->where('email', 'autre@test.local')->count());
+        $this->assertNull(Agency::query()->where('name', 'Agence Totalement Nouvelle')->first());
+    }
+
+    public function test_registration_requires_terms_and_strong_enough_password(): void
+    {
+        $this->get(route('register.show')); // amorce la session (CSRF)
+
+        $response = $this->post(route('register.store'), [
+            'name'                  => 'Y',
+            'email'                 => 'y@test.local',
+            'password'              => 'abc123', // lettre+chiffre OK
+            'password_confirmation' => 'abc123',
+            'agency_name'           => 'Agence Y',
+            // 'terms' absent => refus
+            '_token'                => csrf_token(),
+        ]);
+        $response->assertSessionHasErrors('terms');
+
+        $response = $this->post(route('register.store'), [
+            'name'                  => 'Y',
+            'email'                 => 'y2@test.local',
+            'password'              => '123456', // pas de lettre => refus
+            'password_confirmation' => '123456',
+            'agency_name'           => 'Agence Y2',
+            'terms'                 => '1',
+            '_token'                => csrf_token(),
+        ]);
+        $response->assertSessionHasErrors('password');
+    }
+
+    /* ================================================================
+     | SELF-SERVICE — LE PROPRIÉTAIRE GÈRE SON GROUPE D'AGENCES
+     | ================================================================ */
+
+    public function test_registered_owner_can_add_agencies_and_manage_their_users(): void
+    {
+        // Inscription → le client devient PROPRIÉTAIRE de son groupe
+        $this->get(route('register.show'));
+        $this->post(route('register.store'), [
+            'name'                  => 'Propriétaire Alpha',
+            'email'                 => 'alpha@test.local',
+            'password'              => 'secret12',
+            'password_confirmation' => 'secret12',
+            'agency_name'           => 'Alpha Pressing',
+            'terms'                 => '1',
+            '_token'                => csrf_token(),
+        ])->assertRedirect(route('dashboard'));
+
+        $owner   = User::query()->where('email', 'alpha@test.local')->first();
+        $agency1 = Agency::query()->where('name', 'Alpha Pressing')->first();
+
+        $this->assertTrue($owner->managesGroup());
+        $this->assertEquals($owner->id, $agency1->refresh()->owner_id);
+
+        // Écran Agences accessible, limité à SES agences (pas « Agence A » du setUp)
+        $this->actingAs($owner)
+            ->get(route('admin.agencies.index'))
+            ->assertOk()
+            ->assertSee('Alpha Pressing')
+            ->assertDontSee('Agence A');
+
+        // Il ajoute une DEUXIÈME agence — il en devient automatiquement propriétaire
+        $this->post(route('admin.agencies.store'), [
+            '_token'       => csrf_token(),
+            'name'         => 'Alpha Succursale',
+            'copy_catalog' => '1',
+        ])->assertRedirect();
+
+        $agency2 = Agency::query()->where('name', 'Alpha Succursale')->first();
+        $this->assertNotNull($agency2);
+        $this->assertEquals($owner->id, $agency2->owner_id);
+        $this->assertGreaterThan(0, $agency2->services()->withAgency()->count()); // catalogue copié
+
+        // Il bascule son contexte de travail vers sa 2e agence
+        $this->post(route('admin.agency.switch'), [
+            '_token'    => csrf_token(),
+            'agency_id' => $agency2->id,
+        ])->assertRedirect();
+        $this->assertEquals($agency2->id, \App\Support\AgencyContext::id());
+
+        // Écran Utilisateurs : il crée un caissier dans sa 2e agence
+        $this->get(route('admin.users.index'))->assertOk();
+        $this->post(route('admin.users.store'), [
+            '_token'    => csrf_token(),
+            'name'      => 'Caissier Alpha 2',
+            'email'     => 'alpha2.caisse@test.local',
+            'password'  => 'password',
+            'role'      => 'caissier',
+            'agency_id' => $agency2->id,
+        ])->assertRedirect();
+
+        $this->assertTrue(
+            User::query()->where('email', 'alpha2.caisse@test.local')->where('agency_id', $agency2->id)->exists()
+        );
+    }
+
+    public function test_owner_cannot_reach_other_groups_agencies_or_users(): void
+    {
+        // Propriétaire A (par inscription)
+        $this->get(route('register.show'));
+        $this->post(route('register.store'), [
+            'name'                  => 'Owner A',
+            'email'                 => 'owner.a@test.local',
+            'password'              => 'secret12',
+            'password_confirmation' => 'secret12',
+            'agency_name'           => 'Owner A Pressing',
+            'terms'                 => '1',
+            '_token'                => csrf_token(),
+        ]);
+        $ownerA = User::query()->where('email', 'owner.a@test.local')->first();
+
+        // Propriétaire B (arrangé directement : autre groupe)
+        $service = app(AgencyService::class);
+        $agencyB = $service->create(['name' => 'Beta Pressing', 'copy_catalog' => false]);
+        $ownerB  = User::create([
+            'name' => 'Owner B', 'email' => 'owner.b@test.local',
+            'password' => Hash::make('password'), 'agency_id' => $agencyB->id,
+        ]);
+        $ownerB->assignRole('admin');
+        $agencyB->update(['owner_id' => $ownerB->id]);
+
+        $this->actingAs($ownerA);
+
+        // La liste n'affiche PAS les agences de B
+        $this->get(route('admin.agencies.index'))
+            ->assertOk()
+            ->assertDontSee('Beta Pressing');
+
+        // Agence de B : actions interdites (403)
+        $this->post(route('admin.agencies.toggle', $agencyB), ['_token' => csrf_token()])
+            ->assertForbidden();
+        $this->post(route('admin.agencies.seedCatalog', $agencyB), ['_token' => csrf_token()])
+            ->assertForbidden();
+
+        // Bascule de contexte vers l'agence de B : refusée
+        $this->post(route('admin.agency.switch'), [
+            '_token'    => csrf_token(),
+            'agency_id' => $agencyB->id,
+        ])->assertRedirect()->assertSessionHas('error');
+        $this->assertNotEquals($agencyB->id, \App\Support\AgencyContext::id());
+
+        // Utilisateurs : il ne peut pas rattacher quelqu'un à l'agence de B…
+        $this->post(route('admin.users.store'), [
+            '_token'    => csrf_token(),
+            'name'      => 'X',
+            'email'     => 'x.intrus@test.local',
+            'password'  => 'password',
+            'role'      => 'caissier',
+            'agency_id' => $agencyB->id,
+        ])->assertRedirect()->assertSessionHas('error');
+        $this->assertNull(User::query()->where('email', 'x.intrus@test.local')->first());
+
+        // …ni modifier, ni désactiver l'utilisateur de B
+        $this->patch(route('admin.users.update', $ownerB), [
+            '_token' => csrf_token(), 'role' => 'caissier', 'agency_id' => $agencyB->id,
+        ])->assertForbidden();
+        $this->post(route('admin.users.toggle', $ownerB), ['_token' => csrf_token()])
+            ->assertForbidden();
+    }
+
     public function test_partial_payment_rejected_on_settled_order(): void
     {
         $order = $this->createOrderFor($this->cashierA, $this->agencyA, 0);

@@ -34,6 +34,11 @@
         <button type="submit" class="btn-primary btn-lg w-full">Se connecter</button>
     </form>
 
+    <p class="mt-5 text-center text-sm text-slate-500">
+        Nouveau sur la plateforme ?
+        <a href="{{ route('register.show') }}" class="font-semibold text-sky-700 hover:underline">Créer un compte</a>
+    </p>
+
     @if (app()->environment('local'))
         {{-- Rappel des comptes de démo (uniquement en local) --}}
         <div class="mt-6 rounded-lg bg-sky-50 p-3 text-xs text-sky-800 ring-1 ring-sky-100">

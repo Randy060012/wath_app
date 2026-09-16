@@ -5,7 +5,9 @@
 > les conventions et les règles métier. Respecte-les. Après chaque mise à jour
 > du projet, mets ce fichier à jour (date, versions, fonctionnalités, tests).
 > **Dernière mise à jour : 2026-09-15** — par Buffy (Freebuff) :
-> export PDF des rapports (dompdf).
+> inscription self-service (compte + première agence), export PDF des rapports,
+> **propriétaire de groupe** (agencies.owner_id : le client inscrit ajoute des
+> agences et gère ses utilisateurs) et formulaire register 2 colonnes.
 
 ---
 
@@ -19,7 +21,7 @@
 |---|---|
 | Framework | Laravel 12 (PHP 8.2+), monolithe MVC classique |
 | Base de données | SQLite en dev (`database/database.sqlite`), portable MySQL |
-| Front-end | Blade + Tailwind CSS v4 (compilé SANS Node.js) + Alpine.js |
+| Front-end | Blade + Tailwind CSS v4 (compilé SANS Node.js — binaire standalone) + Alpine.js |
 | Authentification | Session Laravel + rôles **spatie/laravel-permission** |
 | Tests | PHPUnit 11 — `php artisan test` (**41 tests / 153 assertions, tous verts**) |
 | Assets | `public/assets/` vendorisé (Alpine, Lucide), zéro npm/Vite |
@@ -110,7 +112,7 @@ RECU → EN_COURS → REPASSE → PRET → LIVRE (terminal)
 
 | Zone | Routes | Contrôleurs / méthodes clés |
 |---|---|---|
-| Public | `/login`, `/logout` | AuthController (rate-limit 5 tentatives) |
+| Public | `/login`, `/register`, `/logout` | AuthController (rate-limit 5 tentatives), **RegisterController** (inscription self-service) |
 | Tous | `/` dashboard, `/clients/search` (JSON), `/clients/quick-store` | DashboardController, ClientSearchController |
 | Caisse+Admin | `orders` (resource), `/orders/{o}/settle`, `/orders/{o}/pay`, `/orders/{o}/mark-ready` | OrderController — **`pay` = paiement partiel SANS livraison** (plafonné au solde dû) ; `settle` = encaisse solde + livre |
 | Caisse+Admin | `clients`, `proformas` (+ send/status/convert), `/caisse`, prints | CashRegisterController (dashboard, ticket 80 mm, étiquettes) |
@@ -140,6 +142,8 @@ business. Décisions validées : admin lié à une agence, écran admin utilisat
 ### Mécanique
 - **`App\Support\AgencyContext`** : agence courante en SESSION
   (`session('agency_id')`). `null` = vue GROUPE (super-admin uniquement).
+  Un **propriétaire** (voir ci-dessous) peut basculer parmi SES agences
+  (sélecteur validé : une agence non possédée est ignorée).
 - **Trait `App\Models\Concerns\BelongsToAgency`** (sur Client, Category,
   Service, Order, OrderItem, Payment, Proforma, Inventory) :
   - scope global Eloquent : filtre automatiquement sur
@@ -150,16 +154,28 @@ business. Décisions validées : admin lié à une agence, écran admin utilisat
 - **`User` n'a PAS ce trait** (il EST rattaché) : `users.agency_id`
   - `null` + rôle `admin` = **super-admin** (vue groupe, `isSuperAdmin()`) ;
   - `X` = employé de l'agence X (verrouillé par EnsureAgencyContext).
+- **PROPRIÉTAIRE self-service** (`agencies.owner_id`) : le client inscrit
+  via `/register` est owner de son agence (et de celles qu'il ajoute).
+  `User::managesGroup()` = super-admin **OU** owner. Les écrans groupe
+  (Agences, Utilisateurs, sélecteur de contexte) sont ouverts aux deux :
+  - middleware `group-manager` (`EnsureGroupManager`, remplace `super-admin`) ;
+  - `AgencyController` / `UserAdminController` scoppent les listes sur
+    `$user->ownedAgencies()` (super-admin = tout) et vérifient l'appartenance
+    sur chaque action (403 sinon) ;
+  - un owner qui crée une agence en devient automatiquement le propriétaire
+    (`owner_id`), sans jamais pouvoir créer de super-admin.
 - **`EnsureAgencyContext`** (append au groupe web) : force le contexte de
-  session = `user.agency_id` pour tout employé d'agence ; partage
-  `$currentAgency` aux vues (userbox).
-- **`EnsureSuperAdmin`** (alias `super-admin`) : protège les écrans groupe.
+  session = `user.agency_id` pour tout employé d'agence simple ; respecte le
+  sélecteur (validé) d'un propriétaire ; partage `$currentAgency` aux vues.
+- **`EnsureGroupManager`** (alias `group-manager`) : protège les écrans groupe
+  (super-admin OU propriétaire).
 - **AgencyService** : `create()` (agence + duplication catalogue global +
   admin local optionnel), `duplicateCatalogTo()` (idempotent, source =
   catalogue global `agency_id NULL`, sinon 1re agence), `toggle()`.
 
-### Colonnes & contraintes (migration 2026_09_13_000010)
-- `agencies` : id, code `AG-###`, name (unique), phone, email, address, is_active.
+### Colonnes & contraintes (migrations 2026_09_13_000010 + 2026_09_15_000001)
+- `agencies` : id, owner_id (FK users, NULL = agence créée par le super-admin),
+  code `AG-###`, name (unique), phone, email, address, is_active.
 - `agency_id` (FK nullable, index) sur : users, categories, services, clients,
   orders, order_items, payments, proformas, inventories. `NULL` = global.
 - `users.is_active` (désactivation de compte sans suppression).
@@ -190,9 +206,30 @@ Comptes démo (mot de passe `password`) : `admin@pressing.test` (super-admin),
 Seeders orchestrés par `DatabaseSeeder` : RoleSeeder → AgencySeeder (crée le
 catalogue global via CatalogSeeder + agence démo) → UserSeeder.
 
+### Inscription self-service (nouveau client de la plateforme)`GET/POST /register` (`register.show`/`register.store`, middleware `guest`) —
+`RegisterController` + vue `auth/register.blade.php` (layout guest élargi via
+section `card_wide`, **2 colonnes : compte | agence**) :
+- crée en UNE transaction : **l'agence** (via AgencyService : code AG-###,
+  catalogue global copié) **+ le compte propriétaire** (rôle `admin`,
+  `agency_id` rempli → JAMAIS super-admin via l'inscription) puis grave
+  `agencies.owner_id` : le client devient **propriétaire de son groupe**
+  (il peut ensuite ajouter d'autres agences et gérer leurs utilisateurs) ;
+- validations : e-mail et nom d'agence uniques, mdp min 6 avec lettres ET
+  chiffres + confirmation, conditions d'utilisation acceptées (`terms`) ;
+- connecte automatiquement l'utilisateur, régénère la session et verrouille
+  le contexte sur sa nouvelle agence (`AgencyContext::set`).
+- Le lien « Créer un compte » figure sous le formulaire de login.
+
 ---
 
-## 7. Front-end & build CSS (PAS de Node.js)
+## 7. Front-end & build CSS (RÈGLE ABSOLUE : AUCUN Node.js dans le projet)
+
+> Le client l'exige : **pas de Node.js, npm, npx, Vite ni package.json**.
+> Le CSS est compilé par le **binaire standalone Tailwind** (`build/tailwindcss.exe`,
+> non versionné, téléchargeable depuis les releases GitHub de Tailwind) via
+> `./build.sh`. Les JS applicatifs (Alpine, Lucide, datatable) sont VENDORISÉS
+> dans `public/assets/`. Respecter cette règle pour toute nouvelle dépendance
+> front : chercher une alternative PHP/vendorisée, jamais un outil npm.
 
 - **Tailwind v4 CLI standalone** : `./build.sh` compile
   `build/tailwind.input.css` → `public/assets/css/app.css`. **Relancer après
@@ -273,12 +310,12 @@ custom ; borné 2 ans) :
 | Fichier | Couverture |
 |---|---|
 | `PressingWorkflowTest` | parcours complet dépôt→atelier→retrait, statut dérivé des articles, transitions interdites rejetées, markReady (machine à états + idempotence + notif), rate-limit login, recherche JSON, 403 inter-rôles |
-| `MultiTenantAndPaymentTest` | isolation agences (clients/commandes invisibles, 404 cross-agence), catalogue dupliqué et scopé, admin local bloqué des écrans groupe, super-admin voit agences/utilisateurs, **paiement partiel** (solde réduit sans livraison, versements multiples plafonnés, refus si réglée), **comparatif rapports** (super-admin : oui + filtre ; admin local : non), **ticket & étiquettes portent l'agence**, **export PDF des rapports** (téléchargeable, signature %PDF-, 403 pour un caissier) |
+| `MultiTenantAndPaymentTest` | isolation agences (clients/commandes invisibles, 404 cross-agence), catalogue dupliqué et scopé, admin local bloqué des écrans groupe, super-admin voit agences/utilisateurs, **paiement partiel** (solde réduit sans livraison, versements multiples plafonnés, refus si réglée), **comparatif rapports** (super-admin : oui + filtre ; admin local : non), **ticket & étiquettes portent l'agence**, **export PDF des rapports** (téléchargeable, signature %PDF-, 403 pour un caissier), **inscription self-service** (compte propriétaire + agence + catalogue copié + login auto, doublons e-mail/nom d'agence rejetés sans création partielle, terms + mdp lettres/chiffres obligatoires) |
 
 Conventions : `RefreshDatabase`, seeders RoleSeeder/CatalogSeeder dans
 `setUp`, contexte agence via `actingAs()` (le middleware verrouille la
 session), CSRF amorcé par un GET préalable avant les POST de formulaires.
-**État : 42 tests, 157 assertions, 0 échec (2026-09-15).**
+**État : 47 tests, 207 assertions, 0 échec (2026-09-15).**
 
 ---
 
@@ -287,7 +324,17 @@ session), CSRF amorcé par un GET préalable avant les POST de formulaires.
 - **2026-09-13** : demande initiale — drag & drop atelier, paiement du reste
   en caisse, multi-tenant (base partagée). Implémentés + tests.
 - **2026-09-15** : rapport comparatif par agence, agence sur ticket/étiquettes,
-  export PDF des rapports (dompdf ^3.1 — dépendance ajoutée au composer.json).
+  export PDF des rapports (dompdf ^3.1 — dépendance ajoutée au composer.json),
+  inscription self-service (register : compte + première agence, transaction),
+  correction du hack `startSection/stopSection` dans `auth/register.blade.php`.
+- **2026-09-15** : **propriétaire de groupe self-service** — `agencies.owner_id`
+  (migration), `User::managesGroup()`, middleware `group-manager` en remplacement
+  de `super-admin` sur les écrans Agences/Utilisateurs, scoping owner dans
+  AgencyController/UserAdminController/AgencyContextController + userbox
+  (sélecteur multi-agences possédées). Piège corrigé au passage : la duplication
+  du catalogue (eager-load `with('services')`) doit utiliser `withAgency()` sur
+  la RELATION aussi, sinon le contexte de session masque les services globaux.
+  Register : carte élargie 2 colonnes (compte | agence), `max-w-3xl`.
 - `categories.slug` avait un unique global → rescopé par agence (attention
   SQLite vs MySQL : dropUnique impossible sur contrainte inline SQLite).
 - chillerlan/php-qrcode **6.x** : les constantes `QRCode::OUTPUT_*` et `ECC_L`
@@ -299,6 +346,11 @@ session), CSRF amorcé par un GET préalable avant les POST de formulaires.
 - Session de test : le CSRF doit être amorcé (GET) avant un POST de
   formulaire avec `_token` (voir tests existants).
 - Ne pas passer l'enum `PaymentMethod` à `str_replace()` (utiliser `->label()`).
+- **2026-09-15** : `View::startSection('x', $valeur)` à 2 arguments définit le
+  contenu DIRECTEMENT (n'ouvre pas de tampon) — `View::stopSection()` juste
+  après lève `Cannot end a section without first starting one`. Pour une
+  section « valeur » (ex. `card_wide` du layout guest), utiliser la forme
+  Blade `@section('card_wide', true)`.
 - Sauvegarde de l'ancienne base : `database/database.sqlite.bak`
   (supprimable une fois validé).
 
@@ -306,12 +358,15 @@ session), CSRF amorcé par un GET préalable avant les POST de formulaires.
 
 ```bash
 php artisan serve            # dev server (ou composer dev)
-php artisan test             # suite complète (41 tests)
+php artisan test             # suite complète (47 tests)
 ./build.sh                   # recompiler le CSS après modification des vues
 php artisan migrate --force  # migrations
 php artisan db:seed --force  # seeders (idempotents)
 php build/generate-report.php  # régénère RAPPORT_PROJET.html (partage)
 ```
+
+> Rappel : **aucune étape du projet ne requiert Node.js** — installation,
+> build CSS, tests et déploiement fonctionnent uniquement avec PHP + Composer.
 
 > **Partage du rapport :** `RAPPORT_PROJET.html` est la version autonome
 > (CSS + mermaid embarqués, diagramme rendu dans le navigateur). Après toute

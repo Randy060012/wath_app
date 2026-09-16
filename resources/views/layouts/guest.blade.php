@@ -17,7 +17,7 @@
 </head>
 <body class="grid min-h-screen place-items-center bg-sky-900 px-4">
 
-    {{-- ÉTAPE 1 — Layout "invité" : utilisé uniquement par la page de login --}}
+    {{-- ÉTAPE 1 — Layout "invité" : login + register --}}
     <div class="w-full max-w-sm">
         <div class="mb-6 text-center">
             {{-- Logo : gouttes d'eau (blanchisserie) --}}
@@ -28,7 +28,10 @@
             <p class="text-sm text-sky-300">Gestion pressing & blanchisserie</p>
         </div>
 
-        <div class="rounded-2xl bg-white p-6 shadow-xl">
+        {{-- Carte élargie (max-w-3xl, format rectangulaire) quand la vue
+             le demande via la section 'card_wide' (ex: register 2 colonnes) --}}
+        <div class="rounded-2xl bg-white p-6 shadow-xl {{ View::getSection('card_wide') ? 'max-w-3xl' : '' }}"
+             @if (View::getSection('card_wide')) style="width: 48rem; max-width: 100vw;" @endif>
             @yield('content')
         </div>
     </div>

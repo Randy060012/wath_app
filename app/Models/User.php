@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
@@ -58,10 +59,26 @@ class User extends Authenticatable
         return $this->belongsTo(Agency::class);
     }
 
+    /** Agences possédées (self-service : le client peut en créer plusieurs). */
+    public function ownedAgencies(): HasMany
+    {
+        return $this->hasMany(Agency::class, 'owner_id');
+    }
+
     /** Super-admin : admin NON rattaché à une agence (vue groupe). */
     public function isSuperAdmin(): bool
     {
         return $this->isAdmin() && $this->agency_id === null;
+    }
+
+    /**
+     * Peut gérer le groupe (écrans Agences / Utilisateurs) :
+     *  - super-admin (plateforme) : tout le monde ;
+     *  - PROPRIÉTAIRE self-service : l'agence qu'il a créée + les suivantes.
+     */
+    public function managesGroup(): bool
+    {
+        return $this->isSuperAdmin() || $this->ownedAgencies()->exists();
     }
 
     /* -----------------------------------------------------------------

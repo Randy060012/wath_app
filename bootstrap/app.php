@@ -16,7 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // ->middleware('role:caissier') etc.
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
-            'super-admin' => \App\Http\Middleware\EnsureSuperAdmin::class,
+            // Écrans GROUPE : super-admin (plateforme) OU propriétaire
+            // self-service (le client gestionnaire de son groupe d'agences).
+            'group-manager' => \App\Http\Middleware\EnsureGroupManager::class,
         ]);
 
         // Redirection des visiteurs non authentifiés vers la page de login

@@ -12,9 +12,6 @@
 /.vscode
 /.zed
 /auth.json
-/node_modules
-/public/build
-/public/hot
 /public/storage
 # CLI standalone Tailwind (binaire 112 Mo, non versionné — voir build.sh)
 /build/tailwindcss.exe

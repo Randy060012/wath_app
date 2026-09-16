@@ -8,22 +8,38 @@ use Illuminate\Http\Request;
 /**
  * MULTI-TENANT — CONTRÔLEUR AgencyContextController
  * -----------------------------------------------------------------
- * Permet au SUPER-ADMIN de basculer sa session entre :
- *  - la vue GROUPE (toutes les agences, AgencyContext = null) ;
- *  - une agence précise (il « endosse » le point de vue de l'agence).
+ * Permet de basculer sa session entre les agences :
+ *  - SUPER-ADMIN : vue GROUPE (AgencyContext = null) ⇄ une agence
+ *    précise (il « endosse » le point de vue de l'agence) ;
+ *  - PROPRIÉTAIRE self-service : uniquement parmi LES AGENCES QU'IL
+ *    POSSÈDE (agencies.owner_id) — pas de vue groupe.
  *
- * Un utilisateur rattaché à une agence ne peut PAS changer de
- * contexte : son agency_id est verrouillé par le middleware
+ * Un utilisateur d'agence simple ne peut PAS changer de contexte :
+ * son agency_id est verrouillé par le middleware
  * EnsureAgencyContext (et ici par le reset qui ne l'atteint jamais).
  */
 class AgencyContextController extends Controller
 {
-    /** Choix du contexte (super-admin) : agency_id absent/null = vue groupe. */
+    /**
+     * Choix du contexte : agency_id absent/null = vue groupe
+     * (super-admin uniquement ; un propriétaire vise une de SES agences).
+     */
     public function switch(Request $request)
     {
         $data = $request->validate([
             'agency_id' => ['nullable', 'integer', 'exists:agencies,id'],
         ]);
+
+        $user = $request->user();
+
+        // Propriétaire self-service : bascule possible UNIQUEMENT vers
+        // une agence qu'il possède (jamais la vue groupe, jamais ailleurs).
+        if (! $user->isSuperAdmin()) {
+            if (empty($data['agency_id'])
+                || ! $user->ownedAgencies()->whereKey((int) $data['agency_id'])->exists()) {
+                return back()->with('error', 'Vous ne pouvez basculer que vers une agence de votre groupe.');
+            }
+        }
 
         AgencyContext::set(isset($data['agency_id']) ? (int) $data['agency_id'] : null);
 

@@ -26,9 +26,11 @@ class AgencyService
      *  - copie du catalogue global (catégories + prestations) si aucun
      *    catalogue global n'existe, le modèle est pris sur la première
      *    agence existante, sinon l'agence démarre vide ;
-     *  - admin local optionnel (nom/email/mot de passe).
+     *  - admin local optionnel (nom/email/mot de passe) ;
+     *  - PROPRIÉTAIRE optionnel (self-service : le client gestionnaire
+     *    du groupe — agencies.owner_id).
      *
-     * @param  array{name:string, phone?:?string, email?:?string, address?:?string, copy_catalog?:bool, admin?:?array{name:string,email:string,password:string}} $data
+     * @param  array{name:string, phone?:?string, email?:?string, address?:?string, copy_catalog?:bool, owner_id?:int|null, admin?:?array{name:string,email:string,password:string}} $data
      *
      * @throws \Throwable
      */
@@ -42,6 +44,7 @@ class AgencyService
                 'email'     => $data['email'] ?? null,
                 'address'   => $data['address'] ?? null,
                 'is_active' => true,
+                'owner_id'  => $data['owner_id'] ?? null,
             ]);
 
             if ($data['copy_catalog'] ?? true) {
@@ -69,10 +72,17 @@ class AgencyService
             return; // déjà initialisée
         }
 
+        // NB : withAgency() sur la relation services aussi — le contexte
+        // de session (ex: propriétaire travaillant dans son agence) ne
+        // doit PAS masquer les services GLOBAUX du modèle source.
         $globalExists = Category::query()->withAgency()->whereNull('agency_id')->exists();
         $sourceCategories = $globalExists
-            ? Category::query()->withAgency()->whereNull('agency_id')->with('services')->orderBy('sort_order')->get()
-            : Category::query()->withAgency()->with('services')->orderBy('sort_order')->limit(1)->get();
+            ? Category::query()->withAgency()->whereNull('agency_id')
+                ->with(['services' => fn ($q) => $q->withAgency()])
+                ->orderBy('sort_order')->get()
+            : Category::query()->withAgency()
+                ->with(['services' => fn ($q) => $q->withAgency()])
+                ->orderBy('sort_order')->limit(1)->get();
 
         foreach ($sourceCategories as $source) {
             $category = Category::create([

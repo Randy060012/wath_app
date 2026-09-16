@@ -24,10 +24,13 @@ class AgencyContext
 
     /**
      * L'agence courante (id) pour l'utilisateur connecté.
-     * Super-admin (users.agency_id null + rôle admin) : suit son
-     * sélecteur de session, sinon null (= vue GROUPE).
-     * Utilisateur d'agence : TOUJOURS sa propre agence — le sélecteur
-     * ne peut pas la contourner.
+     *  - utilisateur rattaché (agency_id rempli) : TOUJOURS sa propre
+     *    agence — le sélecteur ne peut pas la contourner ;
+     *  - super-admin (agency_id null) : suit son sélecteur de session,
+     *    sinon null (= vue GROUPE) ;
+     *  - PROPRIÉTAIRE self-service (agency_id rempli) : le sélecteur de
+     *    session l'emporte S'IL désigne une agence QU'IL POSSÈDE — sinon
+     *    son agence de rattachement fait foi.
      */
     public static function id(): ?int
     {
@@ -37,8 +40,18 @@ class AgencyContext
             return null;
         }
 
-        // Un utilisateur rattaché à une agence y est enfermé.
+        // Un utilisateur rattaché à une agence y est enfermé… sauf s'il
+        // possède d'autres agences (propriétaire self-service).
         if ($user->agency_id !== null) {
+            // Sélecteur valide UNIQUEMENT si l'agence choisie lui appartient.
+            $session = session(self::SESSION_KEY);
+            if ($session !== null && (int) $session !== (int) $user->agency_id) {
+                $owns = $user->ownedAgencies()->whereKey((int) $session)->exists();
+                if ($owns) {
+                    return (int) $session;
+                }
+            }
+
             return (int) $user->agency_id;
         }
 
@@ -63,8 +76,10 @@ class AgencyContext
     }
 
     /**
-     * Fixe le contexte de la session (super-admin uniquement).
-     * $agencyId null = retour à la vue GROUPE.
+     * Fixe le contexte de la session (super-admin ou propriétaire).
+     * $agencyId null = retour à la vue GROUPE (super-admin uniquement :
+     * pour un propriétaire, id() retombe toujours sur son agence de
+     * rattachement — jamais null).
      */
     public static function set(?int $agencyId): void
     {

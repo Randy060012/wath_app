@@ -36,6 +36,10 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('guest')->group(function () {
     Route::get('/login', [App\Http\Controllers\AuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [App\Http\Controllers\AuthController::class, 'login'])->name('login.attempt');
+
+    // INSCRIPTION SELF-SERVICE : compte propriétaire + première agence
+    Route::get('/register', [App\Http\Controllers\RegisterController::class, 'show'])->name('register.show');
+    Route::post('/register', [App\Http\Controllers\RegisterController::class, 'store'])->name('register.store');
 });
 
 Route::post('/logout', [App\Http\Controllers\AuthController::class, 'logout'])
@@ -108,9 +112,11 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::get('/reports/pdf', [ReportController::class, 'pdf'])->name('reports.pdf');
 
     // -----------------------------------------------------------------
-    // MULTI-TENANT — ADMINISTRATION GROUPE (super-admin uniquement)
+    // MULTI-TENANT — ADMINISTRATION GROUPE
+    // (super-admin plateforme OU propriétaire self-service : le
+    //  propriétaire ne voit et ne gère que SES agences)
     // -----------------------------------------------------------------
-    Route::middleware('super-admin')->group(function () {
+    Route::middleware('group-manager')->group(function () {
         // Agences / businesses
         Route::get('/agencies', [AgencyController::class, 'index'])->name('agencies.index');
         Route::post('/agencies', [AgencyController::class, 'store'])->name('agencies.store');
